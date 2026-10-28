@@ -16,6 +16,7 @@ struct test {
 void test_counter();
 void test_event();
 void test_print();
+void test_io();
 
 int main() {
   log_init();
@@ -23,6 +24,7 @@ int main() {
   struct test tests[] = {
       {"counter", test_counter},
       {  "event",   test_event},
+      {     "io",      test_io},
       {  "print",   test_print},
       {     NULL,         NULL},
   };

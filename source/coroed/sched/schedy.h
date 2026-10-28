@@ -16,3 +16,8 @@ void sched_wait();
 void sched_print_statistics();
 
 void sched_destroy();
+
+void task_park(struct task* caller);
+
+void task_wake(struct task* task);
+

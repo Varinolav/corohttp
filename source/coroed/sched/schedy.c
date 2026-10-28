@@ -15,6 +15,9 @@
 #include "kthread.h"
 #include "uthread.h"
 
+#include <stdatomic.h>
+#include "io.h"
+
 enum {
   /**
    * Максимальное количество файберов, которое может
@@ -68,6 +71,9 @@ struct task {
 
     /** Отработала и может быть переиспользования. */
     UTHREAD_ZOMBIE,
+
+    /** Ожидание IO */
+    UTHREAD_BLOCKED,
   } state;  // Текущее состояние задачи
 
   /**
@@ -119,6 +125,8 @@ static struct task tasks[SCHED_THREADS_LIMIT];  // Список всех зад�
 static kthread_id_t kthread_ids[SCHED_WORKERS_COUNT];
 static struct worker workers[SCHED_WORKERS_COUNT];
 
+static atomic_size_t active_tasks;
+
 /**
  * Установить задачу в пустое состояние.
  */
@@ -149,6 +157,8 @@ void sched_init() {
     kthread_ids[i] = 0;
     sched_worker_init(&workers[i], i);
   }
+  atomic_store(&active_tasks, 0);
+  io_init();
 }
 
 /**
@@ -205,6 +215,9 @@ int sched_loop(void* argument) {
   for (;;) {
     struct task* task = sched_acquire_next();
     if (task == NULL) {
+      if (atomic_load(&active_tasks) != 0) {
+        continue;
+      }
       break;
     }
 
@@ -235,12 +248,11 @@ struct task* sched_acquire_next() {
 
     for (size_t i = 0; i < SCHED_THREADS_LIMIT; ++i) {
       struct task* task = &tasks[next_task_index];
+      // Планирование round-robin
+      next_task_index = (next_task_index + 1) % SCHED_THREADS_LIMIT;
       if (!spinlock_try_lock(&task->lock)) {
         continue;
       }
-
-      // Планирование round-robin
-      next_task_index = (next_task_index + 1) % SCHED_THREADS_LIMIT;
 
       if (task->thread != NULL && task->state == UTHREAD_RUNNABLE) {
         spinlock_unlock(&tasks_lock);
@@ -264,9 +276,12 @@ void sched_release(struct task* task) {
     // еще, например, разблокировать зависимые задачи.
     uthread_reset(task->thread);
     task->state = UTHREAD_ZOMBIE;
+    atomic_fetch_sub(&active_tasks, 1);
   } else if (task->state == UTHREAD_RUNNING) {
     task->state = UTHREAD_RUNNABLE;
-  } else /* if (task->state == UTHREAD_BLOCKED) */ {
+  } else if (task->state == UTHREAD_BLOCKED) {
+    task->state = UTHREAD_BLOCKED; // оставляем задачу в блоке
+  } else {
     assert(false && "Not implemented");
   }
   spinlock_unlock(&task->lock);
@@ -281,6 +296,19 @@ void sched_finish(struct task* task) {
 
 void task_yield(struct task* caller) {
   sched_switch_to_scheduler(caller);
+}
+
+void task_park(struct task* caller) {
+  caller->state = UTHREAD_BLOCKED;
+  sched_switch_to_scheduler(caller);
+}
+
+void task_wake(struct task* task) {
+  spinlock_lock(&task->lock);
+  if (task->state == UTHREAD_BLOCKED) {
+    task->state = UTHREAD_RUNNABLE;
+  }
+  spinlock_unlock(&task->lock);
 }
 
 void task_exit(struct task* caller) {
@@ -315,6 +343,7 @@ task_t sched_try_submit(void (*entry)(), void* argument) {
       uthread_set_entry(task->thread, entry);
       uthread_set_arg_0(task->thread, task);
       uthread_set_arg_1(task->thread, argument);
+      atomic_fetch_add(&active_tasks, 1);
       task->state = UTHREAD_RUNNABLE;
     }
 
@@ -386,4 +415,5 @@ void sched_destroy() {
     }
     spinlock_unlock(&task->lock);
   }
+  io_destroy();
 }
