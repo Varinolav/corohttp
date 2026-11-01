@@ -11,7 +11,6 @@
 #include "kthread.h"
 
 static const int WAIT_PERIOD = 100;
-static const int EVENT_COUNTER = 1;
 
 struct io_waiter {
     struct task* task;
@@ -29,7 +28,7 @@ void io_wait(struct task* caller, int fd, uint32_t events) {
     struct io_waiter waiter = {caller, fd}; 
 
     struct epoll_event event = {0};
-    event.events = events | EPOLLONESHOT;
+    event.events = events;
     event.data.ptr = &waiter;
 
     int s = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event);
@@ -38,10 +37,10 @@ void io_wait(struct task* caller, int fd, uint32_t events) {
     task_park(caller);
 }
 
-void io_poll(void) {
+void io_poll() {
     struct epoll_event event = {0};
 
-    int count = epoll_wait(epoll_fd, &event, EVENT_COUNTER, WAIT_PERIOD);
+    int count = epoll_wait(epoll_fd, &event, 1, WAIT_PERIOD);
     if (count == 0) {
         return;
     }
@@ -58,8 +57,6 @@ void io_poll(void) {
 }
 
 int io_loop(void* argument) {
-    (void)argument;
-
     while (!atomic_load(&io_stopping)) {
         io_poll();
     }
@@ -67,7 +64,7 @@ int io_loop(void* argument) {
 }
 
 void io_init() {
-    epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    epoll_fd = epoll_create1(0);
     assert(epoll_fd != -1);
 
     atomic_store(&io_stopping, false);

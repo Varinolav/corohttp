@@ -13,8 +13,7 @@
 #include "coroed/sched/io.h"
 
 void set_nonblocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
 }
 
 TASK_DECLARE(accept_loop, void, arg);
@@ -126,7 +125,7 @@ int main() {
         close(fd);
         return 1;
     }
-    printf("Listening on http://127.0.0.1:8080\n");
+    printf("server is active on: http://127.0.0.1:8080\n");
     tasks_init();
     
     
