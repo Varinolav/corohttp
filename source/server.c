@@ -23,7 +23,7 @@ static void* handle_request(void* arg) {
         char name[256];
 
         if (sscanf(buf, "%15s %255s %15s", method, path, version) == 3) {
-            if (sscanf(path, "/hello/%255[^/?]", name) == 1) {
+            if (sscanf(path, "/hello/%255[^/]", name) == 1) {
                 
                 char json_body[512];
                 int body_len = snprintf(json_body, sizeof(json_body), "{\"message\":\"%s\"}", name);
