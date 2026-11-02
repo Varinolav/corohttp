@@ -1,44 +1,19 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include <stdint.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <string.h>
-#include <fcntl.h>
+#include <errno.h>
 
-
-
-
-int main() {
+static void* handle_request(void* arg) {
+    int client_fd  = (int)(intptr_t) arg;
     char buf[1024];
 
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = htons(8080);
-    bind(fd, (struct sockaddr*) &addr, sizeof(addr));
-    
-    set_nonblocking(fd);
-
-    if (listen(fd, 5) < 0) {
-        perror("listen failed");
-        close(fd);
-        return 1;
-    }
-
-    for (;;) {
-    int client_fd = accept(fd, NULL, NULL);
-    if (client_fd < 0) {
-        perror("accept failed");
-        close(fd);
-        return 1;
-    }
-    set_nonblocking(client_fd);
-
-
     ssize_t bytes_read = read(client_fd, buf, sizeof(buf) - 1);
+
     if (bytes_read > 0) {
         buf[bytes_read] = '\0'; 
         
@@ -55,10 +30,10 @@ int main() {
 
                 char response[1024];
                 snprintf(response, sizeof(response),
-                    "HTTP/1.1 200 OK\n"
-                    "Content-Type: application/json; charset=utf-8\n"
-                    "Content-Length: %d\n"
-                    "Connection: close\n"
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: application/json; charset=utf-8\r\n"
+                    "Content-Length: %d\r\n"
+                    "Connection: close\r\n"
                     "\r\n"
                     "%s", 
                     body_len, json_body);
@@ -67,15 +42,67 @@ int main() {
                 
             } else {
                 const char *not_found = 
-                    "HTTP/1.1 404 Not Found\n"
-                    "Content-Length: 0\n"
-                    "Connection: close\n\n";
+                    "HTTP/1.1 404 Not Found\r\n"
+                    "Content-Length: 0\r\n"
+                    "Connection: close\r\n\r\n";
                 write(client_fd, not_found, strlen(not_found));
             }
         }
     }
+    close(client_fd);
+    return NULL;
+}
+
+
+
+
+static void accept_loop(int listen_fd) {
+
+    for (;;) {
+        int client_fd = accept(listen_fd, NULL, NULL);
+        if (client_fd < 0) {
+            perror("accept failed");
+            continue; 
+        }
+
+        pthread_t thread;
+        int error = pthread_create(&thread, NULL, handle_request,
+                                   (void*)(intptr_t)client_fd);
+        if (error != 0) {
+            fprintf(stderr, "pthread_create failed: %s\n", strerror(error));
+            close(client_fd);
+            continue;
+        }
+        pthread_detach(thread);
+    }
+}
+
+
+
+
+int main() {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        perror("socket failed");
+        return 1;
     }
 
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(8080);
+    if (bind(fd, (struct sockaddr*) &addr, sizeof(addr)) < 0) {
+        perror("bind failed");
+        close(fd);
+        return 1;
+    }
+    
+    if (listen(fd, 1024) < 0) {
+        perror("listen failed");
+        close(fd);
+        return 1;
+    }
+    printf("server is active on: http://127.0.0.1:8080\n");
+    accept_loop(fd);
     close(fd);
-
 }

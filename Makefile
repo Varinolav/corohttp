@@ -18,11 +18,27 @@ CFLAGS   += $(SANITIZERS)
 LDFLAGS   = $(CFLAGS)
 
 SRCS     := $(shell find source -iname '*.c') $(shell find source -iname '*.S')
+SRCS     := $(filter-out $(SRC_DIR)/server.c $(SRC_DIR)/async_server.c,$(SRCS))
 
 OBJS     := $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
 OBJS     := $(patsubst $(SRC_DIR)/%.S, $(OBJ_DIR)/%.o, $(OBJS))
 
 TARGET    = app
+.DEFAULT_GOAL := run
+
+.PHONY: run compile clean threaded-server async-server
+
+threaded-server: $(BIN_DIR)/threaded_server
+
+async-server: $(BIN_DIR)/async_server
+
+$(BIN_DIR)/threaded_server: $(SRC_DIR)/server.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) -pthread $< -o $@ $(LDFLAGS)
+
+CORO_OBJS := $(filter $(OBJ_DIR)/coroed/%,$(OBJS))
+
+$(BIN_DIR)/async_server: $(OBJ_DIR)/async_server.o $(CORO_OBJS) | $(BIN_DIR)
+	$(CC) $^ -o $@ $(LDFLAGS)
 
 run: $(BIN_DIR)/$(TARGET)
 	./$(BIN_DIR)/$(TARGET)

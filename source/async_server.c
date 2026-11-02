@@ -57,10 +57,10 @@ TASK_DEFINE(handle_request, void, arg) {
 
                 char response[1024];
                 snprintf(response, sizeof(response),
-                    "HTTP/1.1 200 OK\n"
-                    "Content-Type: application/json; charset=utf-8\n"
-                    "Content-Length: %d\n"
-                    "Connection: close\n"
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: application/json; charset=utf-8\r\n"
+                    "Content-Length: %d\r\n"
+                    "Connection: close\r\n"
                     "\r\n"
                     "%s", 
                     body_len, json_body);
@@ -69,9 +69,9 @@ TASK_DEFINE(handle_request, void, arg) {
                 
             } else {
                 const char *not_found = 
-                    "HTTP/1.1 404 Not Found\n"
-                    "Content-Length: 0\n"
-                    "Connection: close\n\n";
+                    "HTTP/1.1 404 Not Found\r\n"
+                    "Content-Length: 0\r\n"
+                    "Connection: close\r\n\r\n";
                 task_write(__self, client_fd, not_found, strlen(not_found));
             }
         }
@@ -120,7 +120,7 @@ int main() {
     
     set_nonblocking(fd);
 
-    if (listen(fd, 5) < 0) {
+    if (listen(fd, 1024) < 0) {
         perror("listen failed");
         close(fd);
         return 1;
